@@ -6,25 +6,15 @@
 
     -   明确研究问题：在美国成年人群中，异常（短或长）睡眠时长与代谢综合征(MetS)风险的关联是否因个体特征（尤其是体力活动水平和饮食质量）而异？
     -   设定可衡量的目标：
-        -   
+        -   (a) 估计不同睡眠时长组（短/长 vs. 正常）关联MetS风险的平均效应。
 
-            (a) 估计不同睡眠时长组（短/长 vs. 正常）关联MetS风险的平均效应。
+        -   (b) 估计该关联效应在不同个体特征组合下的条件平均处理效应(CATE)。
 
-        -   
+        -   (c) 识别并量化体力活动(PA)和饮食质量(DQ)对睡眠-MetS关联的调节作用（缓冲效应）。
 
-            (b) 估计该关联效应在不同个体特征组合下的条件平均处理效应(CATE)。
+        -   (d) 找出除PA和DQ外，其他显著影响睡眠-MetS关联异质性的协变量，包括入睡时间。
 
-        -   
-
-            (c) 识别并量化体力活动(PA)和饮食质量(DQ)对睡眠-MetS关联的调节作用（缓冲效应）。
-
-        -   
-
-            (d) 找出除PA和DQ外，其他显著影响睡眠-MetS关联异质性的协变量，包括入睡时间。
-
-        -   
-
-            (e) 探讨研究结果对个性化预防MetS的潜在指导意义。
+        -   (e) 探讨研究结果对个性化预防MetS的潜在指导意义。
 
 2.  1.2. 确定目标NHANES周期与理由:
 
@@ -83,6 +73,58 @@
 
 **阶段二：数据获取与准备 (概念性)**
 
+变量清单：
+
+| **NHANES 变量名**   | **数据文件成分**        | **描述**                                                     |
+| ------------------- | ----------------------- | ------------------------------------------------------------ |
+| `SEQN`              | DEMO, BMX, LAB, Q, DIET | **参与者序列号 (Respondent sequence number)**：每个参与者的唯一ID，用于合并不同数据文件。 |
+| `RIDAGEYR`          | DEMO                    | **年龄 (Age)**：参与者在筛查时的年龄（岁）。                 |
+| `RIAGENDR`          | DEMO                    | **性别 (Gender)**：参与者的性别 (1=男, 2=女)。               |
+| `RIDRETH3`          | DEMO                    | **种族/民族 (Race/Ethnicity)**：综合种族/民族分类 (1=墨裔美国人, 2=其他西班牙裔，3=非西班牙裔白人, 4=非西班牙裔黑人，6=非西班牙裔亚裔，7=其他种族 - 包括多种族)。 |
+| `DMDEDUC2`          | DEMO                    | **教育程度 (Education Level - Adults 20+)**：20 岁以上成人参与者的最高教育水平（分类变量）。 |
+| `INDFMPIR`          | DEMO                    | **家庭收入与贫困比 (Income to Poverty Ratio)**：家庭收入相对于贫困线的比率，反映社会经济状况。 |
+| `RIDEXPRG`          | DEMO                    | **怀孕状态 (Pregnancy Status)**：用于识别并排除孕妇参与者。  |
+| `SDMVPSU`           | DEMO                    | **伪初级抽样单元 (Pseudo-PSU)**：用于复杂抽样设计方差估计。  |
+| `SDMVSTRA`          | DEMO                    | **伪分层变量 (Pseudo-Stratum)**：用于复杂抽样设计方差估计。  |
+| `WTMEC[X]YR`        | DEMO                    | **体检中心样本权重 (MEC Weight)**：用于调整样本，使其结果能代表美国非机构化平民人口。需要根据合并的周期数选择正确的权重。 |
+| `SLQ300`            | SLQ                     | **工作日睡觉时间 (Usual sleep time on weekdays or workdays)**：参与者通常在工作日睡觉的时间。可用于计算工作日睡眠时长。 |
+| `SLQ310`            | SLQ                     | **工作日起床时间 (Usual wake time on weekdays or workdays)**：参与者通常在工作日上床起床的时间。可用于计算工作日睡眠时长。 |
+| `SLQ320`            | SLQ                     | **周末睡觉时间 (Usual sleep time on weekends)**              |
+| `SLQ330`            | SLQ                     | **周末起床时间 (Usual wake time on weekends)**               |
+| `BMXWAIST`          | BMX                     | **腰围 (Waist Circumference)**：测量的腰围长度 (cm)，MetS组分之一。 |
+| `BMXHT`             | BMX                     | **身高 (Standing Height)**：测量的身高 (cm)，用于计算BMI。   |
+| `BMXWT`             | BMX                     | **体重 (Weight)**：测量的体重 (kg)，用于计算BMI。            |
+| `BMXBMI`            | BMX                     | **身体质量指数 (Body Mass Index)**：基于身高和体重计算的BMI值 (kg/m²)。通常文件中已提供。 |
+| `LBXTR`             | TRIGLY                  | **甘油三酯 (Triglycerides)**：实验室测量的血清甘油三酯水平 (mg/dL)，MetS组分之一。 |
+| `LBDHDD`            | HDL                     | **高密度脂蛋白胆固醇 (HDL Cholesterol)**：实验室测量的HDL-C水平 (mg/dL)，MetS组分之一。 |
+| `BPXSY1`            | BPX                     | **收缩压 (Systolic Blood Pressure)**：第一次测量的收缩压 (mmHg)，MetS组分之一。 |
+| `BPXDI1`            | BPX                     | **舒张压 (Diastolic Blood Pressure)**：第一次测量的舒张压 (mmHg)，MetS组分之一。 |
+| `LBXGLU`            | GLU                     | **血糖 (Plasma Glucose)**：实验室测量的血浆葡萄糖水平 (mg/dL)，MetS组分之一。 |
+| `LBXSCR`            | BIOPRO                  | **血清肌酐 (Serum Creatinine)**：实验室测量的肌酐水平 (mg/dL)，用于计算eGFR（肾功能）。 |
+| `PAQ605`            | PAQ                     | **剧烈的工作活动 (Vigorous work activity)**                  |
+| `PAQ610`            | PAQ                     | **剧烈工作活动天数 (Number of days vigorous work)**          |
+| `PAQ620`            | PAQ                     | **中等工作活动 (Moderate work activity)**                    |
+| `PAQ625`            | PAQ                     | **中等工作活动天数 (Number of days vigorous work)**          |
+| `PAQ650`            | PAQ                     | **剧烈休闲活动(Vigorous recreational activity - days/week)** |
+| `PAQ655`            | PAQ                     | **剧烈休闲活动天数 (Vigorous recreational activity - duration/day)** |
+| `PAQ665`            | PAQ                     | **中等休闲活动(Moderate recreational activity - days/week)** |
+| `PAQ670`            | PAQ                     | **中等休闲活动天数 (Moderate recreational activity - duration/day)** |
+| `PAD680`            | PAQ                     | **久坐活动分钟数**                                           |
+| `DR1TKCAL`          | DRXTOT                  | **第一天总能量摄入 (Day 1 Total Energy Intake)** (kcal)。用于计算DQ代理评分。 |
+| `DR1TSODI`          | DRXTOT                  | **第一天总钠摄入 (Day 1 Total Sodium Intake)** (mg)。用于计算DQ代理评分。 |
+| `DR1TPOTA`          | DRXTOT                  | **第一天总钾摄入 (Day 1 Total Potassium Intake)** (mg)。用于计算DQ代理评分。 |
+| `DR1TFIBE`          | DRXTOT                  | **第一天总膳食纤维摄入 (Day 1 Total Dietary Fiber Intake)** (gm)。用于计算DQ代理评分。 |
+| `SMQ020`            | SMQ                     | **是否吸过至少100支烟 (Smoked at least 100 cigarettes in life)**。用于定义吸烟状况。 |
+| `SMQ040`            | SMQ                     | **现在是否吸烟 (Do you now smoke cigarettes?)**。用于定义吸烟状况。 |
+| `ALQ130`            | ALQ                     | **过去12个月平均每日饮酒量 (Avg # alcoholic drinks/day - past 12 mo)**。用于定义饮酒状况/量。 |
+| `DPQ010` - `DPQ090` | DPQ                     | **抑郁症状筛查问卷PHQ-9各项得分 (PHQ-9 Items)**：9个问题，每个问题得分0-3。需要加总得到总分。 |
+| **(Calculated)**    | -                       | **睡眠时长类别 (Sleep Duration Category - W)**：基于`SLQ300`/`SLQ310`计算的工作日时长，或基于`SLQ330`的周末时长，或其他方法定义的分类变量（例如：<6h, 7-8h, >9h）。**需要根据所选方法明确定义操作步骤。** |
+| **(Calculated)**    | -                       | **代谢综合征状态 (Metabolic Syndrome Status - Y)**：基于5个组分（腰围、甘油三酯、HDL、血压、血糖）的测量值和药物使用信息，计算得到的二分类变量 (0/1)。 |
+| **(Calculated)**    | -                       | **体力活动水平 (Physical Activity Level - Moderator)**：基于`PAQ`变量计算的总MET-分钟/周或其他指标，得到的连续或分类变量。**注意：此列表中不含肌肉力量训练信息。** |
+| **(Calculated)**    | -                       | **饮食质量评分 (Diet Quality Score - Moderator)**：基于`DRXTOT`或其他膳食数据计算的代理评分，或（如果可行）基于`DRXIFF`计算的标准膳食指数（如HEI）。**需要明确计算方法，当前列表仅包含计算代理评分所需的部分营养素。** |
+| **(Calculated)**    | -                       | **PHQ-9总分 (PHQ-9 Total Score)**：将`DPQ010`至`DPQ090`得分加总 (0-27)。 |
+| **(Calculated)**    | -                       | **肾小球滤过率估计值 (eGFR)**：基于血清肌酐(`LBXSCR`)、年龄、性别、种族（根据所选公式，如CKD-EPI）计算的值。 |
+
 1.  2.1. 识别必要的NHANES数据文件 (概念列表):
     -   基于阶段1.3的变量清单，需要下载的NHANES数据文件类别包括：DEMO, SLQ, BMX, BPX, TRIGLY, HDL, GLU, BIOPRO/CHEM, PAQ, SMQ, ALQ, DPQ, RXQ_RX, DRXTOT, DRXIFF等。
     -   对于2015-2016年度，所需文件名为DEMO_I, SLQ_I, BMX_I, BPX_I, L10_TRIGLY, L10_HDL, L10_GLU, L10_BIOPRO, PAQ_I, SMQ_I, ALQ_I, DPQ_I, RXQ_RX_I, DR1TOT_I, DR2TOT_I, DR1IFF_I, DR2IFF_I等（具体文件名以NHANES官方文档为准）。
@@ -113,32 +155,28 @@
 
     诊断标准：<https://en.wikipedia.org/wiki/Metabolic_syndrome#Diagnosis>
 
-    1.  从相应的实验室和体检数据文件中提取腰围、甘油三酯、HDL-C、血压和空腹血糖的测量值。
-    2.  从处方药数据文件中识别正在服用抗高血压、降糖或降脂药物的参与者。
-    3.  根据NCEP ATP III标准，结合测量值和药物使用情况，判断每个MetS组分是否异常。
-    4.  如果至少3个组分异常，则定义为MetS阳性，生成二分类变量。
-    5.  （可选）计算满足异常标准的组分数，作为连续评分。
-
+    从相应的实验室和体检数据文件中提取腰围、甘油三酯、HDL-C、血压和空腹血糖的测量值。
+    
     -   Sleep Cat (W):
-
+    
         1.  从睡眠问卷中提取关于通常每晚睡眠小时数的数据。
         2.  根据预设的分类标准（\<6小时为"短"，7-8小时为"正常/参照"，\>9小时为"长"）创建睡眠时长分类变量。
-
+    
     -   PA (Moderator):
-
+    
         1.  从体力活动问卷中提取所有相关的活动类型、频率、时长和强度信息。
         2.  使用NHANES官方指南或相关文献提供的MET值，计算每种活动的MET-分钟数。
         3.  将所有活动的MET-分钟数加总，得到每周总的MET-分钟数，作为连续的体力活动变量。
 
     -   DQ (Moderator):
-
+    
         1.  从膳食数据文件中获取参与者两天的食物摄入详细信息。
         2.  使用USDA FNDDS数据库将食物编码映射到食物组。
         3.  计算每个参与者对HEI-2015各组分的摄入量。
         4.  根据HEI-2015的评分标准，计算每个组分的得分，并加总得到最终的HEI-2015总分。
-
+    
     -   Covariates (X):
-
+    
         1.  从人口统计学文件中提取年龄、性别、种族和教育程度信息。
         2.  从收入文件中提取家庭收入与贫困比信息。
         3.  基于身高和体重测量值计算BMI。
@@ -146,7 +184,7 @@
         5.  计算PHQ-9总分，将DPQ010至DPQ090的得分相加。
         6.  使用CKD-EPI公式，结合血清肌酐、年龄、性别和种族信息计算eGFR。
         7.  **从睡眠问卷中提取关于就寝时间的问题（例如，询问通常几点睡觉）。将回答转换为24小时制的小时数（例如，晚上10点转换为22），作为连续变量。如果问题是分类的（例如，早睡、正常、晚睡），则直接使用该分类变量。**
-
+    
 6.  2.6. 创建最终分析数据集:
 
     -   整合所有清洗、构建好的变量（Y, W, X，包括**入睡时间**），以及对应的SEQN、权重、PSU和Strata变量。
