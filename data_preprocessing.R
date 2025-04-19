@@ -58,9 +58,9 @@ nhanes_processed <- nhanes_merged %>%
     # 睡眠时长分组
     sleep_cat = factor(case_when(
       is.na(sleep_duration) ~ NA_character_,
-      sleep_duration < 6 ~ "Short sleep (<6h)",
-      sleep_duration <= 8 ~ "Optimal sleep (6-8h)",
-      sleep_duration > 8 ~ "Long sleep (>8h)"
+      sleep_duration < 7 ~ "Short sleep (<7h)",
+      sleep_duration <= 9 ~ "Optimal sleep (7-9h)",
+      sleep_duration > 9 ~ "Long sleep (>9h)"
     ))
   )%>%filter(!is.na(sleep_cat)) %>%
   
@@ -171,7 +171,7 @@ nhanes_processed <- nhanes_merged %>%
       AlcoholAvgDrinks > 1 & AlcoholAvgDrinks <= 3 ~ "Moderate", # 调整阈值示例
       AlcoholAvgDrinks > 3 ~ "Heavy",
       TRUE ~ NA_character_
-    ), levels = c("Light", "Moderate", "Heavy")))
+    ), levels = c("None","Light", "Moderate", "Heavy")))
 
 
 phq9_map <- c(
@@ -219,8 +219,8 @@ nhanes_processed <- nhanes_processed  %>%
   # --- 选择最终分析变量 ---
   select(
     SEQN, WGT4YR, SDMVPSU, SDMVSTRA, # ID & Design
-    metS_status, sleep_cat, # Y & W
-    PA_level, DQ_proxy_score, Age, Gender, RaceEthnicity, Education, Income, BMI, # X vars
+    metS_status, sleep_cat,sleep_duration, # Y & W
+    bedtime_hours,PA_level, DQ_proxy_score, Age, Gender, RaceEthnicity, Education, Income, BMI, # X vars
     SmokingStatus, AlcoholCat, PHQ9_score, eGFR # X vars continued
   )
 
@@ -250,7 +250,7 @@ imputation_candidates <- nhanes_processed %>%
 # 执行插补 (使用较少迭代次数以加速示例)
 # 注意：因子变量会自动处理。如果MICE出错，可能需要检查数据类型或共线性。
 set.seed(123) # 保证可重复性
-mice_obj <- mice(imputation_candidates, m = 5, method = 'pmm', maxit = 100, printFlag = TRUE)
+mice_obj <- mice(imputation_candidates, m = 2, method = 'pmm', maxit = 100, printFlag = TRUE)
 
 # 提取第一个插补完整的数据集
 # !! 再次强调：正式研究应汇总所有插补数据集结果 !!
