@@ -7,6 +7,7 @@ pacman::p_load(tidyverse, survey, mice, grf, ggplot2, car, dplyr)
 
 # 读取数据
 load("nhanes_merged.rda")
+#load("NHANES_20172018.rda")
 
 # --- 数据预处理与变量构建 ---
 nhanes_processed <- nhanes_merged %>%
@@ -55,13 +56,13 @@ nhanes_processed <- nhanes_merged %>%
       TRUE ~ waketime_hours - bedtime_hours
     ),
     # 睡眠时长分组
-    sleep_category = case_when(
+    sleep_cat = factor(case_when(
       is.na(sleep_duration) ~ NA_character_,
       sleep_duration < 6 ~ "Short sleep (<6h)",
       sleep_duration <= 8 ~ "Optimal sleep (6-8h)",
       sleep_duration > 8 ~ "Long sleep (>8h)"
-    )
-  )%>%filter(!is.na(sleep_category)) %>%
+    ))
+  )%>%filter(!is.na(sleep_cat)) %>%
   
   
   # --- 构建调节变量 PA  ---
@@ -131,125 +132,148 @@ nhanes_processed <- nhanes_merged %>%
       total_PA_MET_min >= 3000 ~ "High",
       TRUE ~ NA_character_ # 可能存在所有PA变量都缺失的情况
     ), levels = c("Low", "Medium", "High"))
-  ) #%>%
+  ) %>%
+  
+  
+  # --- 构建调节变量 DQ (极简化代理评分) ---
+  mutate(
+    DR1TKCAL = ifelse(is.na(DR1TKCAL) | DR1TKCAL <= 0, NA, DR1TKCAL), # 处理无效能量值
+    K_Na_ratio = DR1TPOTA / DR1TSODI,
+    Fiber_density = DR1TFIBE / (DR1TKCAL / 1000),
+    # 处理比率中的Inf或NaN
+    K_Na_ratio = ifelse(!is.finite(K_Na_ratio), NA, K_Na_ratio),
+    Fiber_density = ifelse(!is.finite(Fiber_density), NA, Fiber_density),
+    # 简化组合 (可能有NA)
+    DQ_proxy_score = scale(K_Na_ratio)[,1] + scale(Fiber_density)[,1] # 使用 scale 并取第一列确保是向量
+  ) %>%
+  
+  
+  
+  # --- 构建其他协变量 X ---
+  mutate(
+    BMI = BMXBMI,
+    Age = RIDAGEYR,
+    Income = INDFMPIR,
+    Gender = factor(ifelse(RIAGENDR == "Female", "Female", "Male")),
+    RaceEthnicity = factor(RIDRETH3),
+    Education = factor(DMDEDUC2),
+    SmokingStatus = factor(case_when(
+      SMQ020 == "No" ~ "Never Smoker",
+      SMQ020 == "Yes" & SMQ040 == "Not at all" ~ "Former Smoker",
+      SMQ020 == "Yes" & SMQ040 %in% c("Every day", "Some days") ~ "Current Smoker",
+      TRUE ~ NA_character_
+    ), levels = c("Never Smoker", "Former Smoker", "Current Smoker")),
+    AlcoholAvgDrinks = ALQ130,
+    AlcoholAvgDrinks = ifelse(AlcoholAvgDrinks %in% c(777, 999), NA, AlcoholAvgDrinks),
+    AlcoholCat = factor(case_when(
+      AlcoholAvgDrinks == 0 ~ "None", # 更清晰的None定义
+      AlcoholAvgDrinks > 0 & AlcoholAvgDrinks <= 1 ~ "Light",
+      AlcoholAvgDrinks > 1 & AlcoholAvgDrinks <= 3 ~ "Moderate", # 调整阈值示例
+      AlcoholAvgDrinks > 3 ~ "Heavy",
+      TRUE ~ NA_character_
+    ), levels = c("Light", "Moderate", "Heavy")))
 
-# 查看处理结果
-summary(nhanes_processed$sleep_duration)
-table(nhanes_processed$sleep_category, useNA = "ifany")
-table(nhanes_processed$metS_status, useNA = "ifany")
-summary(nhanes_processed$total_PA_MET_min)
-table(nhanes_processed$PA_level, useNA = "ifany")
+
+phq9_map <- c(
+  "Not at all" = 0,
+  "Several days" = 1,
+  "More than half the days" = 2,
+  "Nearly every day" = 3,
+  "Don't know" = NA,
+  "Refused" = NA
+)
+
+nhanes_processed <- nhanes_processed  %>%
+  mutate(
+    across(
+      # 只处理PHQ-9原始题目（如DPQ030, DPQ040, ...），不影响已有_num变量
+      matches("^DPQ\\d{3}$"),
+      ~ unname(phq9_map[.]),
+      .names = "{.col}_num"
+    )
+  ) %>%
+  mutate(
+    # 只统计新建的DPQ_num变量
+    phq9_miss_count = rowSums(is.na(select(., matches("^DPQ\\d{3}_num$")))),
+    PHQ9_score = ifelse(
+      phq9_miss_count <= 2,
+      rowSums(select(., matches("^DPQ\\d{3}_num$")), na.rm = TRUE),
+      NA
+    )
+  ) %>%
+  
+  mutate(
+    kappa = ifelse(RIAGENDR == 2, 0.7, 0.9),
+    alpha = ifelse(RIAGENDR == 2, -0.241, -0.302),
+    eGFR = ifelse(
+      !is.na(LBXSCR) & LBXSCR > 0 & !is.na(RIDAGEYR),
+      142 *
+        (pmin(LBXSCR / kappa, 1) ^ alpha) *
+        (pmax(LBXSCR / kappa, 1) ^ -1.200) *
+        (0.9938 ^ RIDAGEYR) *
+        ifelse(RIAGENDR == 2, 1.012, 1),
+      NA_real_
+    )
+  ) %>%
+  
+  # --- 选择最终分析变量 ---
+  select(
+    SEQN, WGT4YR, SDMVPSU, SDMVSTRA, # ID & Design
+    metS_status, sleep_cat, # Y & W
+    PA_level, DQ_proxy_score, Age, Gender, RaceEthnicity, Education, Income, BMI, # X vars
+    SmokingStatus, AlcoholCat, PHQ9_score, eGFR # X vars continued
+  )
 
 
-#   
-#   # --- 构建调节变量 DQ (极简化代理评分) ---
-#   mutate(
-#     DR1TKCAL = ifelse(is.na(DR1TKCAL) | DR1TKCAL <= 0, NA, DR1TKCAL), # 处理无效能量值
-#     K_Na_ratio = DR1TPOTA / DR1TSODI,
-#     Fiber_density = DR1TFIBE / (DR1TKCAL / 1000),
-#     # 处理比率中的Inf或NaN
-#     K_Na_ratio = ifelse(!is.finite(K_Na_ratio), NA, K_Na_ratio),
-#     Fiber_density = ifelse(!is.finite(Fiber_density), NA, Fiber_density),
-#     # 简化组合 (可能有NA)
-#     DQ_proxy_score = scale(K_Na_ratio)[,1] + scale(Fiber_density)[,1] # 使用 scale 并取第一列确保是向量
-#   ) %>%
-#   
-#   # --- 构建其他协变量 X ---
-#   mutate(
-#     BMI = BMXBMI,
-#     Age = RIDAGEYR,
-#     IsFemale = factor(ifelse(RIAGENDR == 2, "Female", "Male")),
-#     RaceEthnicity = factor(case_when(
-#       RIDRETH3 == 1 ~ "Mexican American", RIDRETH3 == 2 ~ "Other Hispanic",
-#       RIDRETH3 == 3 ~ "Non-Hispanic White", RIDRETH3 == 4 ~ "Non-Hispanic Black",
-#       RIDRETH3 == 6 ~ "Non-Hispanic Asian", RIDRETH3 == 7 ~ "Other/Mixed Race", TRUE ~ NA_character_
-#     )),
-#     Education = factor(case_when(
-#       DMDEDUC2 == 1 ~ "<9th grade", DMDEDUC2 == 2 ~ "9-11th grade", DMDEDUC2 == 3 ~ "High school grad/GED",
-#       DMDEDUC2 == 4 ~ "Some college/AA degree", DMDEDUC2 == 5 ~ "College grad or above", TRUE ~ NA_character_ # 简化：其他编码视为NA
-#     )),
-#     PIR = INDFMPIR,
-#     SmokingStatus = factor(case_when(
-#       SMQ020 == 2 ~ "Never Smoker", SMQ020 == 1 & SMQ040 == 3 ~ "Former Smoker",
-#       SMQ020 == 1 & SMQ040 %in% c(1, 2) ~ "Current Smoker", TRUE ~ NA_character_
-#     ), levels = c("Never Smoker", "Former Smoker", "Current Smoker")),
-#     AlcoholAvgDrinks = ALQ130,
-#     AlcoholAvgDrinks = ifelse(AlcoholAvgDrinks %in% c(777, 999), NA, AlcoholAvgDrinks),
-#     AlcoholCat = factor(case_when(
-#       AlcoholAvgDrinks == 0 ~ "None", # 更清晰的None定义
-#       AlcoholAvgDrinks > 0 & AlcoholAvgDrinks <= 1 ~ "Light",
-#       AlcoholAvgDrinks > 1 & AlcoholAvgDrinks <= 3 ~ "Moderate", # 调整阈值示例
-#       AlcoholAvgDrinks > 3 ~ "Heavy",
-#       is.na(AlcoholAvgDrinks) ~ "Unknown/None", # 处理NA
-#       TRUE ~ NA_character_
-#     ), levels = c("None", "Light", "Moderate", "Heavy", "Unknown/None")),
-#     # PHQ9 (处理7, 9为NA)
-#     across(starts_with("DPQ"), ~ ifelse(. %in% c(7, 9), NA, .)),
-#     phq9_miss_count = rowSums(is.na(select(., starts_with("DPQ")))), # 计算缺失项数
-#     PHQ9_score = ifelse(phq9_miss_count <= 2, rowSums(select(., starts_with("DPQ")), na.rm = TRUE), NA), # 最多允许2项缺失
-#     # eGFR (使用 CKD-EPI 2021 - 移除非裔美国人调整)
-#     kappa = ifelse(RIAGENDR == 2, 0.7, 0.9),
-#     alpha = ifelse(RIAGENDR == 2, -0.241, -0.302),
-#     eGFR = ifelse(!is.na(LBXSCR) & LBXSCR > 0 & !is.na(RIDAGEYR), # 确保输入有效
-#                   142 * pmin(LBXSCR / kappa, 1)**alpha * pmax(LBXSCR / kappa, 1)**(-1.200) * 0.9938**RIDAGEYR * ifelse(RIAGENDR == 2, 1.012, 1),
-#                   NA_real_)
-#   ) %>%
-#   
-#   # --- 选择最终分析变量 ---
-#   select(
-#     SEQN, WGT4YR, SDMVPSU, SDMVSTRA, # ID & Design
-#     metS_status, sleep_cat, # Y & W
-#     PA_level, DQ_proxy_score, Age, IsFemale, RaceEthnicity, Education, PIR, BMI, # X vars
-#     SmokingStatus, AlcoholCat, PHQ9_score, eGFR # X vars continued
-#   )
-# 
-# # --- 检查处理后的数据概况 ---
-# print("初步处理完成，数据概况：")
-# summary(nhanes_processed)
-# print(paste("处理后行数:", nrow(nhanes_processed)))
-# 
-# # --- 2. 处理缺失值 (多重插补 - MICE) ---
-# vars_to_impute <- nhanes_processed %>%
-#   select(-SEQN, -WGT4YR, -SDMVPSU, -SDMVSTRA) %>%
-#   summarise(across(everything(), ~sum(is.na(.)))) %>%
-#   pivot_longer(everything(), names_to = "variable", values_to = "na_count") %>%
-#   filter(na_count > 0 & na_count < nrow(nhanes_processed)) # 只显示有缺失但非完全缺失的
-# 
-# print("需要插补的变量（缺失比例 > 0）：")
-# print(vars_to_impute)
-# 
-# # 选择用于插补的变量 (通常是所有分析变量，除了ID和设计变量)
-# imputation_candidates <- nhanes_processed %>%
-#   select(-SEQN, -WGT4YR, -SDMVPSU, -SDMVSTRA)
-# 
-# # 检查常数变量或共线性问题（可能导致MICE出错）
-# # findCorrelation, findLinearCombos from caret package can help, but skip for now
-# 
-# # 执行插补 (使用较少迭代次数以加速示例)
-# # 注意：因子变量会自动处理。如果MICE出错，可能需要检查数据类型或共线性。
-# set.seed(123) # 保证可重复性
-# mice_obj <- mice(imputation_candidates, m = 5, method = 'pmm', maxit = 5, printFlag = TRUE)
-# 
-# # 提取第一个插补完整的数据集
-# # !! 再次强调：正式研究应汇总所有插补数据集结果 !!
-# nhanes_imputed <- complete(mice_obj, 1)
-# 
-# # 将设计变量加回
-# nhanes_final <- bind_cols(
-#   nhanes_processed %>% select(SEQN, WGT4YR, SDMVPSU, SDMVSTRA),
-#   nhanes_imputed
-# ) %>% filter(!is.na(sleep_cat)) # 确保处理变量无缺失
-# 
-# print("--- 插补完成 (使用第一个插补集)，准备最终数据用于分析 ---")
-# print(paste("最终数据集维度:", dim(nhanes_final)[1], "rows,", dim(nhanes_final)[2], "columns."))
-# # 检查插补后的数据
-# summary(nhanes_final)
-# 
+# --- 检查处理后的数据概况 ---
+print("初步处理完成，数据概况：")
+summary(nhanes_processed)
+print(paste("处理后行数:", nrow(nhanes_processed)))
+
+# --- 2. 处理缺失值 (多重插补 - MICE) ---
+vars_to_impute <- nhanes_processed %>%
+  select(-SEQN, -WGT4YR, -SDMVPSU, -SDMVSTRA) %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "na_count") %>%
+  filter(na_count > 0 & na_count < nrow(nhanes_processed)) # 只显示有缺失但非完全缺失的
+
+print("需要插补的变量（缺失比例 > 0）：")
+print(vars_to_impute)
+
+# 选择用于插补的变量 (通常是所有分析变量，除了ID和设计变量)
+imputation_candidates <- nhanes_processed %>%
+  select(-SEQN, -WGT4YR, -SDMVPSU, -SDMVSTRA)
+
+# 检查常数变量或共线性问题（可能导致MICE出错）
+# findCorrelation, findLinearCombos from caret package can help, but skip for now
+
+# 执行插补 (使用较少迭代次数以加速示例)
+# 注意：因子变量会自动处理。如果MICE出错，可能需要检查数据类型或共线性。
+set.seed(123) # 保证可重复性
+mice_obj <- mice(imputation_candidates, m = 5, method = 'pmm', maxit = 100, printFlag = TRUE)
+
+# 提取第一个插补完整的数据集
+# !! 再次强调：正式研究应汇总所有插补数据集结果 !!
+nhanes_imputed <- complete(mice_obj, 1)
+
+# 将设计变量加回
+nhanes_final <- bind_cols(
+  nhanes_processed %>% select(SEQN, WGT4YR, SDMVPSU, SDMVSTRA),
+  nhanes_imputed
+) %>% filter(!is.na(sleep_cat)) # 确保处理变量无缺失
+
+print("--- 插补完成 (使用第一个插补集)，准备最终数据用于分析 ---")
+print(paste("最终数据集维度:", dim(nhanes_final)[1], "rows,", dim(nhanes_final)[2], "columns."))
+# 检查插补后的数据
+summary(nhanes_final)
+
+# 保存数据
+save(nhanes_final, file = "nhanes_final.rda")
 # 
 # # --- 3. 准备用于 grf 包的数据 ---
 # Y <- nhanes_final$metS_status
 # W <- nhanes_final$sleep_cat # 因子
-# X_df <- nhanes_final %>% select(PA_level, DQ_proxy_score, Age, IsFemale, RaceEthnicity, Education, PIR, BMI, SmokingStatus, AlcoholCat, PHQ9_score, eGFR)
+# X_df <- nhanes_final %>% select(PA_level, DQ_proxy_score, Age, Gender, RaceEthnicity, Education, Income, BMI, SmokingStatus, AlcoholCat, PHQ9_score, eGFR)
 # 
 # # 检查因子水平，确保没有问题
 # # sapply(X_df, function(x) if(is.factor(x)) levels(x) else NULL)
@@ -266,6 +290,8 @@ table(nhanes_processed$PA_level, useNA = "ifany")
 # print("--- 数据已准备好 (Y, W, X, weights, clusters)，可以进行EDA和因果森林建模 ---")
 # # 检查最终对象的维度和类型
 # dim(X); class(Y); class(W); length(weights); length(clusters)
+# 
+# 
 # 
 # # --- 后续步骤 (EDA, Causal Forest, Interpretation) ---
 # # 使用 Y, W, X, weights, clusters 对象进行分析
