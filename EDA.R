@@ -4,10 +4,11 @@ rm(list = ls())
 # 加载必要包
 library(survey)
 library(tableone)
+library(ggplot2)
 
 
-load("nhanes_final.rda")
-
+# load("nhanes_final.rda")
+nhanes_final <- readxl::read_excel("matched_data.xlsx")
 # 探索性数据分析
 # 创建调查设计对象
 
@@ -23,13 +24,13 @@ nhanes_design <- svydesign(
 
 
 # 2. 指定需要汇总的变量（除设计变量外）
-vars <- c("metS_status", "sleep_duration", #"sleep_cat",
+vars <- c("metS_status", "sleep_duration", "waist_risk", "trigly_risk", "hdl_risk", "bp_risk","glucose_risk", 
           "bedtime_hours","PA_level", "DQ_proxy_score", "Age", "Gender", "RaceEthnicity",
           "Education", "Income", "BMI", "SmokingStatus", "AlcoholCat",
           "PHQ9_score", "eGFR")
 
 # 3. 指定分类变量（factor变量）
-factorVars <- c("metS_status", "sleep_cat", "PA_level", "Gender",
+factorVars <- c("metS_status",  "waist_risk", "trigly_risk", "hdl_risk", "glucose_risk", "bp_risk", "PA_level", "Gender",
                 "RaceEthnicity", "Education", "SmokingStatus", "AlcoholCat")
 
 
@@ -48,6 +49,8 @@ print(table1_weighted,
       showAllLevels = TRUE,
       #nonnormal = c("DQ_proxy_score", "PHQ9_score", "eGFR", "BMI", "Income", "Age")
 )
+
+
 
 # -------------------------------------------------------------------------------------
 # 描述性统计 (加权)
